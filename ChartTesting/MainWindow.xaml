@@ -3,58 +3,59 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:DV="clr-namespace:System.Windows.Controls.DataVisualization;assembly=System.Windows.Controls.DataVisualization.Toolkit"
-        xmlns:DVC="clr-namespace:System.Windows.Controls.DataVisualization.Charting;assembly=System.Windows.Controls.DataVisualization.Toolkit"
+        xmlns:d3="http://research.microsoft.com/DynamicDataDisplay/1.0"
         xmlns:local="clr-namespace:ChartTesting"
         mc:Ignorable="d"
-        Title="MainWindow" Height="350" Width="525">
-    <TabControl x:Name="tabControl" HorizontalAlignment="Stretch" Margin="0,0,0,0" VerticalAlignment="Stretch">
+        Title="Oscilloscope" Height="485" Width="864" MinWidth="800" MinHeight="485"   Icon="C:\Users\Thales\Documents\Visual Studio 2015\Projects\ChartTesting\ChartTesting\bin\iitlogo.png" >
 
-        <TabItem Header="Graph">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition/>
-                    <ColumnDefinition Width="190"/>
-                </Grid.ColumnDefinitions>
-                <DVC:Chart
-                    Name="chartTest"
-                    Title="Oscilloscope Testing"
-                    Grid.Column="0">
-                    <DVC:Chart.LegendStyle>
-                        <Style TargetType="DV:Legend">
-                            <Setter Property="Width" Value="0"/>
-                        </Style>
-                    </DVC:Chart.LegendStyle>
-                    <DVC:Chart.Series>
-                        <DVC:LineSeries Title ="Channel 1"
-                                    IndependentValueBinding="{Binding Path = Key}"
-                                    DependentValueBinding="{Binding Path = Value}"
-                                    ItemsSource="{Binding valueList}">
-                            <DVC:LineSeries.DependentRangeAxis>
-                                <DVC:LinearAxis Orientation="Y"
-                                        ShowGridLines="True"/>
-                            </DVC:LineSeries.DependentRangeAxis>
-                        </DVC:LineSeries>
-                    </DVC:Chart.Series>
-                    <DVC:Chart.Axes>
-                        <DVC:LinearAxis Orientation="X" ShowGridLines="True"/>
-                    </DVC:Chart.Axes>
-                </DVC:Chart>
-                <Slider x:Name="voltsPerDiv" Grid.Column="1" HorizontalAlignment="Left" Margin="10,30,0,0" VerticalAlignment="Top" Width="170"/>
-                <Slider x:Name="timePerDiv" Grid.Column="1" HorizontalAlignment="Left" Margin="10,80,0,0" VerticalAlignment="Top" Width="170"/>
+    <Grid Margin="0,0,2,0" RenderTransformOrigin="0.562,0.492">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition/>
+            <ColumnDefinition Width="372"/>
+        </Grid.ColumnDefinitions>
+
+        <Grid Grid.Column="0">
+            <d3:ChartPlotter Name="myChart" Margin="25,25,25,25">
+                <d3:ChartPlotter.MainHorizontalAxis>
+                    <d3:HorizontalAxis Name="timeAxis" />
+                </d3:ChartPlotter.MainHorizontalAxis>
+                <d3:ChartPlotter.MainVerticalAxis>
+                    <d3:VerticalAxis Name="voltageAxis" />
+                </d3:ChartPlotter.MainVerticalAxis>
+            </d3:ChartPlotter>
+        </Grid>
+        <GroupBox Grid.Column="1" Header="Connection" HorizontalAlignment="Center" Margin="5,5,5,0" VerticalAlignment="Top" Height="140">
+            <Grid HorizontalAlignment="Left" Height="113" VerticalAlignment="Top" Width="347" Margin="0,0,-2,0">
+                <Label x:Name="label1" Content="COM Port" HorizontalAlignment="Left" Margin="5,10,0,0" VerticalAlignment="Top" Height="26" Width="160"/>
+                <ComboBox x:Name="COMComboBox" HorizontalAlignment="Left" Margin="5,41,0,0" VerticalAlignment="Top" Width="160" GotMouseCapture="COMComboBox_GotMouseCapture" Height="22"/>
+                <Button x:Name="connectButton" Content="Connect" HorizontalAlignment="Left" Margin="5,82,0,0" VerticalAlignment="Top" Width="64" Click="connectButton_Click" Height="22" RenderTransformOrigin="0.48,1.773"/>
+                <ComboBox x:Name="baudRateComboBox" HorizontalAlignment="Left" Margin="177,41,0,0" VerticalAlignment="Top" Width="160" Height="22"/>
+                <Label x:Name="label2" Content="Baud Rate" HorizontalAlignment="Left" Margin="177,10,0,0" VerticalAlignment="Top" Height="26" Width="160"/>
+            </Grid>
+        </GroupBox>
+        <GroupBox Header="Sampling" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="5,150,5,0" Height="140"  Grid.Column="1">
+            <Grid HorizontalAlignment="Left" Height="113" VerticalAlignment="Top" Width="347" Margin="4,0,-5,-6">
+                <Label Content="Number of Samples" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5,14,0,0" Width="160" Height="26"/>
+                <TextBox Name="numberOfSamples" HorizontalAlignment="Left" Height="23" TextWrapping="Wrap" VerticalAlignment="Top" Width="160" Margin="5,45,0,0"/>
+
+
+                <Button Name="requestButton" HorizontalAlignment="Left" VerticalAlignment="Top" Width="73" Height="24" Click="requestButton_Click" Margin="177,45,0,0" >
+                    <StackPanel Width="73" Height="24">
+                        <Image Source="C:\Users\Thales\Documents\Visual Studio 2015\Projects\ChartTesting\ChartTesting\bin\refresh.png" Height="17" Margin="1,0,10,0"/>
+                    </StackPanel>
+                </Button>
+
 
             </Grid>
-        </TabItem>
-        <TabItem Header="COM Settings">
-            <Grid>
-                <ComboBox x:Name="baudRateComboBox" HorizontalAlignment="Left" Margin="201,36,0,0" VerticalAlignment="Top" Width="160"/>
-                <ComboBox x:Name="COMComboBox" HorizontalAlignment="Left" Margin="10,36,0,0" VerticalAlignment="Top" Width="160" GotMouseCapture="COMComboBox_GotMouseCapture"/>
-                <Label x:Name="label" Content="Terminal" HorizontalAlignment="Left" Margin="10,73,0,0" VerticalAlignment="Top"/>
-                <TextBox x:Name="terminalTextBox" HorizontalAlignment="Left" Height="177" Margin="10,104,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="491" AllowDrop="False" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
-                <Label x:Name="label1" Content="COM Port" HorizontalAlignment="Left" Margin="10,10,0,0" VerticalAlignment="Top"/>
-                <Label x:Name="label2" Content="Baud Rate" HorizontalAlignment="Left" Margin="201,10,0,0" VerticalAlignment="Top"/>
-                <Button x:Name="connectButton" Content="Connect" HorizontalAlignment="Left" Margin="286,73,0,0" VerticalAlignment="Top" Width="75" Click="connectButton_Click"/>
+        </GroupBox>
+        <GroupBox Header="Measurements" HorizontalAlignment="Center"  VerticalAlignment="Top" Grid.Column="1" Margin="5,295,5,0" Height="140" >
+            <Grid HorizontalAlignment="Left" Height="113" VerticalAlignment="Top" Width="347">
+                <TextBox IsReadOnly="True" HorizontalAlignment="Left" Height="23" TextWrapping="Wrap" VerticalAlignment="Bottom" Width="160" Margin="177,0,0,71"/>
+                <TextBox IsReadOnly="True" Name="AmplitudeBox" HorizontalAlignment="Left" Height="23" TextWrapping="Wrap" VerticalAlignment="Bottom" Width="160" Margin="177,0,0,21"/>
+                <Label Content="Period (Seconds)" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="69,0,0,71" Width="100" Height="28"/>
+                <Label Content="Amplitude (Volts)" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="69,0,0,21" Width="103" Height="26"/>
             </Grid>
-        </TabItem>
-    </TabControl>
+        </GroupBox>
+
+    </Grid>
 </Window>

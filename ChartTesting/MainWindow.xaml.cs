@@ -1,23 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Controls.DataVisualization.Charting;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 using System.IO.Ports;
-using System.Collections;
-using System.Diagnostics;
 using System.Threading;
 using System.Collections.ObjectModel;
+using Microsoft.Research.DynamicDataDisplay.DataSources;
+using System.ComponentModel;
+using System.Windows.Media;
+using Microsoft.Research.DynamicDataDisplay;
+using Microsoft.Research.DynamicDataDisplay.PointMarkers;
 
 namespace ChartTesting
 {
@@ -26,6 +19,8 @@ namespace ChartTesting
     /// </summary>
     public partial class MainWindow : Window
     {
+        public event PropertyChangedEventHandler PropertyChanged;
+
         SerialPort sp;
         string[] availableCOMPorts;
         bool isSerialConnected;
@@ -33,7 +28,44 @@ namespace ChartTesting
         private readonly SynchronizationContext _syncContext;
         public ObservableCollection<KeyValuePair<int, float>> valueList { get; private set; }
 
+
         int valueCounter;
+
+        EnumerableDataSource<Point> m_d3DataSource;
+
+        //List<Point> points;
+        public List<Point> points;
+
+        
+        private LineGraph line;
+
+        //public DynamicDataDisplay.Markers.DataSources.EnumerableDataSource D3DataSource
+        //{
+        //    get
+        //    {
+        //        return m_d3DataSource;
+        //    }
+        //    set
+        //    {
+        //        //you can set your mapping inside the set block as well             
+        //        m_d3DataSource = value;
+        //        OnPropertyChanged("D3DataSource");
+        //    }
+        //}
+
+        //protected void OnPropertyChanged(PropertyChangedEventArgs e)
+        //{
+        //    PropertyChangedEventHandler handler = PropertyChanged;
+        //    if (handler != null)
+        //    {
+        //        handler(this, e);
+        //    }
+        //}
+
+        //protected void OnPropertyChanged(string propertyName)
+        //{
+        //    OnPropertyChanged(new PropertyChangedEventArgs(propertyName));
+        //}
 
         public MainWindow()
         {
@@ -42,15 +74,24 @@ namespace ChartTesting
             _syncContext = SynchronizationContext.Current;
 
             sp = new SerialPort();
-            sp.DataReceived += new SerialDataReceivedEventHandler(DataReceivedHandler);
+        
             baudRateComboBox.ItemsSource = new List<int>{9600,14400,19200,28800,38400,56000,57600,115200};
 
             isSerialConnected = false;
-            valueCounter = 0;
 
-            valueList = new ObservableCollection<KeyValuePair<int, float>>();
+            points = new List<Point>();
+            m_d3DataSource = new EnumerableDataSource<Point>(points);
+            m_d3DataSource.SetXMapping(x => x.X);
+            m_d3DataSource.SetYMapping(y => y.Y);
 
-            
+            line = new LineGraph(m_d3DataSource);
+            line.LinePen = new Pen(Brushes.Black, 2);
+
+            myChart.LegendVisible = false;
+            myChart.Children.Add(line);
+
+            requestButton.IsEnabled = false;
+
         }
 
         private void connectButton_Click(object sender, RoutedEventArgs e)
@@ -64,6 +105,7 @@ namespace ChartTesting
                     sp.Open();
 
                     isSerialConnected = true;
+                    requestButton.IsEnabled = true;
                     connectButton.Content = "Disconnect";
 
                 }
@@ -79,6 +121,7 @@ namespace ChartTesting
                 connectButton.Content = "Connect";
             }
 
+
         }
 
 
@@ -88,78 +131,82 @@ namespace ChartTesting
             COMComboBox.ItemsSource = availableCOMPorts;
         }
 
-        private void DataReceivedHandler(object sender, SerialDataReceivedEventArgs e)
+        private void requestButton_Click(object sender, RoutedEventArgs e)
         {
-            if(sp.ReadChar()=='f')
+
+            double MaxVoltage = 0, MinVoltage = 0;
+
+            int inp;
+            int i;
+            bool receiving_data;
+            bool transmission_error = false;
+            int n_samples = int.Parse(numberOfSamples.Text);
+
+            char[] inData = new char[5];
+
+            sp.DiscardInBuffer();
+            sp.Write("A" + numberOfSamples.Text.PadLeft(5,'0'));
+
+            points.Clear();
+
+            valueCounter = 0;
+            receiving_data = true;
+
+            while (valueCounter < n_samples && receiving_data == true)
             {
-                while (sp.BytesToRead < 5) { }
+                inp = sp.ReadChar();
 
-                sp.ReadChar();
-
-                byte[] inData = new byte[4];
-
-                sp.Read(inData, 0, 4);
-
-                float input = BitConverter.ToSingle(inData,0);
-
-                /* _syncContext.Post(o => terminalTextBox.AppendText(input.ToString()), null);
-                 _syncContext.Post(o => terminalTextBox.ScrollToEnd(), null);*/
-
-                /*if (valueCounter == 255)
+                if (inp == 'd')
                 {
-                    _syncContext.Post(o => valueList.Move(0, 255), null);
-                    _syncContext.Post(o => valueList.Add(new KeyValuePair<int, float>(valueCounter, input)), null);
+                    while (sp.BytesToRead < 4) { }
+
+                    for(i = 0; i < 4; i++)
+                    {
+                        inp = sp.ReadChar();
+                        if (inp > 47 && inp < 58)
+                            inData[i] = (char)inp;
+                        else if (inp == 'E')
+                            receiving_data = false;
+                        else if(inp == 'd')
+                            transmission_error = true;
+                    }
+
+                    if(!transmission_error && receiving_data)
+                    {
+                        inData[4] = '\0';
+                        double input = int.Parse(new string(inData)) * 0.5 / 4096.0;
+
+                        if (valueCounter == 0)
+                        {
+                            MaxVoltage = input;
+                            MinVoltage = input;
+                        }
+                        else
+                        {
+                            if (input > MaxVoltage)
+                                MaxVoltage = input;
+                            if (input < MinVoltage)
+                                MinVoltage = input;
+                        }
+                        points.Add(new Point(Convert.ToDouble(valueCounter)*1.2987E-6, input));
+                        valueCounter++;
+                    }
+
+                    transmission_error = false;
 
                 }
-                else
+                else if(inp == 'E')
                 {
-                    _syncContext.Post(o => valueList.Add(new KeyValuePair<int, float>(valueCounter, input)), null);
-                    _syncContext.Post(o => valueCounter++, null);
-                }*/
-                _syncContext.Post(o => valueList.Add(new KeyValuePair<int, float>(valueCounter, input)), null);
-                _syncContext.Post(o => ((LineSeries)chartTest.Series[0]).ItemsSource = valueList, null);
-                if(valueCounter == 255)
-                {
-                    _syncContext.Post(o => valueCounter = 0, null);
-                    _syncContext.Post(o => valueList.Clear(), null);
-                    _syncContext.Post(o => ((LineSeries)chartTest.Series[0]).ItemsSource = valueList, null);
+                    receiving_data = false;
                 }
-                else
-                    _syncContext.Post(o => valueCounter++, null);
-                //_syncContext.Post(o => ((LineSeries)chartTest.Series[0]).ItemsSource = valueList, null);
-
             }
 
-            /*if (sp.BytesToRead == 6)
-            {
+            double Amplitude = MaxVoltage - MinVoltage;
 
-                byte[] inData = new byte[4];
-
-                sp.
-                
-                string indata = sp.ReadExisting();
-                _syncContext.Post(o => terminalTextBox.AppendText(indata), null);
-                _syncContext.Post(o => terminalTextBox.ScrollToEnd(), null);
-
-            Debug.Write(indata);
-            */
+            AmplitudeBox.Text = Amplitude.ToString("F") + " V";
+            m_d3DataSource.RaiseDataChanged();
+            myChart.FitToView();
         }
+
     }
 }
-/*
-if(myPort.available() > 0) {
-    char inByte = myPort.readChar();
-    if(inByte == 'f') {
-      // we expect data with this format f:XXXX
-      myPort.readChar(); // discard ':'
-      byte[] inData = new byte[4];
-myPort.readBytes(inData);
-      
-      int intbit = 0;
-
-      intbit = (inData[3] << 24) | ((inData[2] & 0xff) << 16) | ((inData[1] & 0xff) << 8) | (inData[0] & 0xff);
-      
-      float f = Float.intBitsToFloat(intbit);
-      println(f);
-    }
-    */
