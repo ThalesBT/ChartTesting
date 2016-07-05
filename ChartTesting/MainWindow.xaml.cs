@@ -11,6 +11,7 @@ using System.ComponentModel;
 using System.Windows.Media;
 using Microsoft.Research.DynamicDataDisplay;
 using Microsoft.Research.DynamicDataDisplay.PointMarkers;
+using System.Numerics;
 
 namespace ChartTesting
 {
@@ -38,7 +39,6 @@ namespace ChartTesting
         //List<Point> points;
         public List<Point> points;
 
-        
         private LineGraph line;
 
         public MainWindow()
@@ -120,6 +120,8 @@ namespace ChartTesting
 
             double mean = 0, variance = 0;
 
+            Complex[] inputPoints = new Complex[] { };
+
             char[] inData = new char[5];
 
             sp.DiscardInBuffer();
@@ -171,10 +173,14 @@ namespace ChartTesting
                                 MinVoltage = input;
                         }
                         //points.Add(new Point(Convert.ToDouble(valueCounter), input));
+
+                        inputPoints[valueCounter] = new Complex(input,0);
+                        
                         if (averagingComboBox.SelectedIndex == 0)
                             points.Add(new Point(Convert.ToDouble(valueCounter) * timeBetweenSamples, input));
                         else
                             points.Add(new Point(Convert.ToDouble(valueCounter) * timeBetweenSamples * (int)averagingComboBox.SelectedItem, input)); //* 1.2987E-6 * 1.111111E-6 --- 0*/
+
                         valueCounter++;
 
                         mean = mean + input / n_samples;
@@ -231,8 +237,10 @@ namespace ChartTesting
             meanPeriod = meanPeriod / i;
 
             displayPeriodFrequency(meanPeriod, (int)averagingComboBox.SelectedItem);
-            
-          
+
+            Complex[] frequencySpectrum = new Complex[] { };
+
+            frequencySpectrum = DFT.Transform(inputPoints);
         }
 
         private void displayPeriodFrequency(double meanPeriod, int averaging)
@@ -240,14 +248,9 @@ namespace ChartTesting
             if (averaging == 0)
                 averaging = 1;
 
-            double period = meanPeriod * timeBetweenSamples*averaging;
+            double period = meanPeriod * timeBetweenSamples * averaging;
 
-            if(period > 0 && period < 1.5E-6)
-            {
-                PeriodBox.Text = period.ToString("E") + " s";
-                FrequencyBox.Text = (1 / period).ToString("E") + " Hz";
-            }
-            else if(period < 1.5E-5)
+            if(period > 0 && period < 1.5E-5)
             {
                 PeriodBox.Text = (period*1E6).ToString("F") + " μs";
                 FrequencyBox.Text = (1 / (period*1E6)).ToString("F") + " MHz";
@@ -287,3 +290,21 @@ namespace ChartTesting
     }
 }
 
+public class DFT
+{
+    public static Complex[] Transform(Complex[] input)
+    {
+        int N = input.Length;
+
+        Complex[] output = new Complex[N];
+
+        double arg = -2.0 * Math.PI / (double)N;
+        for (int n = 0; n < N; n++)
+        {
+            output[n] = new Complex();
+            for (int k = 0; k < N; k++)
+                output[n] += input[k] * Complex.FromPolarCoordinates(1, arg * (double)n * (double)k);
+        }
+        return output;
+    }
+}
