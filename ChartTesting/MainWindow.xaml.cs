@@ -33,39 +33,13 @@ namespace ChartTesting
 
         EnumerableDataSource<Point> m_d3DataSource;
 
+        private double timeBetweenSamples = 1.04E-6;
+
         //List<Point> points;
         public List<Point> points;
 
         
         private LineGraph line;
-
-        //public DynamicDataDisplay.Markers.DataSources.EnumerableDataSource D3DataSource
-        //{
-        //    get
-        //    {
-        //        return m_d3DataSource;
-        //    }
-        //    set
-        //    {
-        //        //you can set your mapping inside the set block as well             
-        //        m_d3DataSource = value;
-        //        OnPropertyChanged("D3DataSource");
-        //    }
-        //}
-
-        //protected void OnPropertyChanged(PropertyChangedEventArgs e)
-        //{
-        //    PropertyChangedEventHandler handler = PropertyChanged;
-        //    if (handler != null)
-        //    {
-        //        handler(this, e);
-        //    }
-        //}
-
-        //protected void OnPropertyChanged(string propertyName)
-        //{
-        //    OnPropertyChanged(new PropertyChangedEventArgs(propertyName));
-        //}
 
         public MainWindow()
         {
@@ -74,8 +48,10 @@ namespace ChartTesting
             _syncContext = SynchronizationContext.Current;
 
             sp = new SerialPort();
-        
-            baudRateComboBox.ItemsSource = new List<int>{9600,14400,19200,28800,38400,56000,57600,115200};
+
+            baudRateComboBox.ItemsSource = new List<int> { 9600, 14400, 19200, 28800, 38400, 56000, 57600, 115200 };
+            averagingComboBox.ItemsSource = new List<int> { 0, 16, 64, 256 };
+            averagingComboBox.SelectedIndex = 1;
 
             isSerialConnected = false;
 
@@ -85,10 +61,10 @@ namespace ChartTesting
             m_d3DataSource.SetYMapping(y => y.Y);
 
             line = new LineGraph(m_d3DataSource);
-            line.LinePen = new Pen(Brushes.Black, 2);
+            line.LinePen = new Pen(Brushes.DarkMagenta, 2);
 
-            myChart.LegendVisible = false;
-            myChart.Children.Add(line);
+            timeDomainChart.LegendVisible = false;
+            timeDomainChart.Children.Add(line);
 
             requestButton.IsEnabled = false;
 
@@ -142,10 +118,16 @@ namespace ChartTesting
             bool transmission_error = false;
             int n_samples = int.Parse(numberOfSamples.Text);
 
+            double mean = 0, variance = 0;
+
             char[] inData = new char[5];
 
             sp.DiscardInBuffer();
-            sp.Write("A" + numberOfSamples.Text.PadLeft(5,'0'));
+            sp.Write("B" + averagingComboBox.SelectedIndex.ToString());
+            Thread.Sleep(300);
+            if (averagingComboBox.SelectedIndex != 0)
+                n_samples = n_samples / (int)averagingComboBox.SelectedItem;
+            sp.Write("A" + n_samples.ToString().PadLeft(7, '0'));
 
             points.Clear();
 
@@ -160,18 +142,18 @@ namespace ChartTesting
                 {
                     while (sp.BytesToRead < 4) { }
 
-                    for(i = 0; i < 4; i++)
+                    for (i = 0; i < 4; i++)
                     {
                         inp = sp.ReadChar();
                         if (inp > 47 && inp < 58)
                             inData[i] = (char)inp;
                         else if (inp == 'E')
                             receiving_data = false;
-                        else if(inp == 'd')
+                        else if (inp == 'd')
                             transmission_error = true;
                     }
 
-                    if(!transmission_error && receiving_data)
+                    if (!transmission_error && receiving_data)
                     {
                         inData[4] = '\0';
                         double input = int.Parse(new string(inData)) * 0.5 / 4096.0;
@@ -188,14 +170,20 @@ namespace ChartTesting
                             if (input < MinVoltage)
                                 MinVoltage = input;
                         }
-                        points.Add(new Point(Convert.ToDouble(valueCounter)*1.2987E-6, input));
+                        //points.Add(new Point(Convert.ToDouble(valueCounter), input));
+                        if (averagingComboBox.SelectedIndex == 0)
+                            points.Add(new Point(Convert.ToDouble(valueCounter) * timeBetweenSamples, input));
+                        else
+                            points.Add(new Point(Convert.ToDouble(valueCounter) * timeBetweenSamples * (int)averagingComboBox.SelectedItem, input)); //* 1.2987E-6 * 1.111111E-6 --- 0*/
                         valueCounter++;
+
+                        mean = mean + input / n_samples;
                     }
 
                     transmission_error = false;
 
                 }
-                else if(inp == 'E')
+                else if (inp == 'E')
                 {
                     receiving_data = false;
                 }
@@ -203,10 +191,99 @@ namespace ChartTesting
 
             double Amplitude = MaxVoltage - MinVoltage;
 
-            AmplitudeBox.Text = Amplitude.ToString("F") + " V";
+            AmplitudeBox.Text = (Amplitude*1E3).ToString("F") + " mV";
             m_d3DataSource.RaiseDataChanged();
-            myChart.FitToView();
+            timeDomainChart.FitToView();
+
+            foreach (Point point in points)
+            {
+                variance = variance + (Math.Pow(point.Y - mean, 2.0)) / n_samples;
+            }
+
+            List<double> autocorrelation = new List<double>();
+            List<int> autocorrelationPeaks = new List<int>();
+
+            double autocorr;
+
+            for (i = 0; i < n_samples - n_samples * 0.1; i++)
+            {
+                autocorr = compute_autoc(n_samples, i, variance, mean);
+                autocorrelation.Add(autocorr);
+            }
+
+            bool ascending = false;
+
+            for(i=0;i<autocorrelation.Count-1;i++)
+                if(autocorrelation[i] < autocorrelation[i+1])
+                    ascending = true;
+                else
+                {
+                    if (ascending)
+                        autocorrelationPeaks.Add(i);
+                    ascending = false;
+                }
+
+            double meanPeriod = 0;
+
+            for(i=0;i<autocorrelationPeaks.Count -1;i++)
+                meanPeriod = meanPeriod + autocorrelationPeaks[i + 1] - autocorrelationPeaks[i];
+
+            meanPeriod = meanPeriod / i;
+
+            displayPeriodFrequency(meanPeriod, (int)averagingComboBox.SelectedItem);
+            
+          
+        }
+
+        private void displayPeriodFrequency(double meanPeriod, int averaging)
+        {
+            if (averaging == 0)
+                averaging = 1;
+
+            double period = meanPeriod * timeBetweenSamples*averaging;
+
+            if(period > 0 && period < 1.5E-6)
+            {
+                PeriodBox.Text = period.ToString("E") + " s";
+                FrequencyBox.Text = (1 / period).ToString("E") + " Hz";
+            }
+            else if(period < 1.5E-5)
+            {
+                PeriodBox.Text = (period*1E6).ToString("F") + " μs";
+                FrequencyBox.Text = (1 / (period*1E6)).ToString("F") + " MHz";
+            }
+            else if(period < 1.5E-3)
+            {
+                PeriodBox.Text = (period * 1E3).ToString("F") + " ms";
+                FrequencyBox.Text = (1 / (period * 1E3)).ToString("F") + " kHz";
+            }
+            else
+            {
+                PeriodBox.Text = (period*1E3).ToString("F") + " ms";
+                FrequencyBox.Text = (1 / period).ToString("F") + " Hz";
+            }
+            
+        }
+
+        private double compute_autoc(int n_samples, int lag, double Variance, double Mean)
+        {
+            double autocv;      // Autocovariance value
+            double ac_value;    // Computed autocorrelation value to be returned
+            int i;           // Loop counter
+
+            // Loop to compute autovariance
+            autocv = 0.0;
+            for (i = 0; i < (n_samples - lag); i++)
+                autocv = autocv + ((points[i].Y - Mean) * (points[i + lag].Y - Mean));
+
+            autocv = (1.0 / (n_samples - lag)) * autocv;
+
+            // Autocorrelation is autocovariance divided by variance
+            ac_value = autocv / Variance;
+
+            return (ac_value);
         }
 
     }
 }
+
