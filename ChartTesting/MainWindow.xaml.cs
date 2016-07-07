@@ -30,16 +30,19 @@ namespace ChartTesting
         public ObservableCollection<KeyValuePair<int, float>> valueList { get; private set; }
 
 
-        int valueCounter;
+        int valueCounter, pointsCounter;
 
         EnumerableDataSource<Point> m_d3DataSource;
+        EnumerableDataSource<Point> m_d3DataSourceFrequency;
 
         private double timeBetweenSamples = 1.04E-6;
 
         //List<Point> points;
         public List<Point> points;
+        public List<Point> pointsFrequency;
 
         private LineGraph line;
+        private LineGraph lineFrequency;
 
         public MainWindow()
         {
@@ -60,11 +63,22 @@ namespace ChartTesting
             m_d3DataSource.SetXMapping(x => x.X);
             m_d3DataSource.SetYMapping(y => y.Y);
 
+            pointsFrequency = new List<Point>();
+            m_d3DataSourceFrequency = new EnumerableDataSource<Point>(pointsFrequency);
+            m_d3DataSourceFrequency.SetXMapping(x => x.X);
+            m_d3DataSourceFrequency.SetYMapping(y => y.Y);
+
             line = new LineGraph(m_d3DataSource);
             line.LinePen = new Pen(Brushes.DarkMagenta, 2);
 
+            lineFrequency = new LineGraph(m_d3DataSourceFrequency);
+            lineFrequency.LinePen = new Pen(Brushes.DarkMagenta, 2);
+
             timeDomainChart.LegendVisible = false;
             timeDomainChart.Children.Add(line);
+
+            frequencyDomainChart.LegendVisible = false;
+            frequencyDomainChart.Children.Add(lineFrequency);
 
             requestButton.IsEnabled = false;
 
@@ -115,12 +129,16 @@ namespace ChartTesting
             int inp;
             int i;
             bool receiving_data;
+            bool ascending;
+            bool firstPeakNotFound;
+            int firstPeakPosition = 0;
             bool transmission_error = false;
-            int n_samples = int.Parse(numberOfSamples.Text);
+            int n_samples, n_samples_original = int.Parse(numberOfSamples.Text);
 
+            double input = 0, inputPrevious = 0;
             double mean = 0, variance = 0;
 
-            Complex[] inputPoints = new Complex[] { };
+            List<Complex> inputPoints = new List<Complex>();
 
             char[] inData = new char[5];
 
@@ -128,13 +146,21 @@ namespace ChartTesting
             sp.Write("B" + averagingComboBox.SelectedIndex.ToString());
             Thread.Sleep(300);
             if (averagingComboBox.SelectedIndex != 0)
-                n_samples = n_samples / (int)averagingComboBox.SelectedItem;
+                n_samples_original = (n_samples_original / (int)averagingComboBox.SelectedItem);
+
+            n_samples = Convert.ToInt32(n_samples_original*1.3);
             sp.Write("A" + n_samples.ToString().PadLeft(7, '0'));
 
+
             points.Clear();
+            pointsFrequency.Clear();
 
             valueCounter = 0;
+            pointsCounter = 0;
             receiving_data = true;
+            ascending = false;
+            firstPeakNotFound = true;
+
 
             while (valueCounter < n_samples && receiving_data == true)
             {
@@ -158,7 +184,8 @@ namespace ChartTesting
                     if (!transmission_error && receiving_data)
                     {
                         inData[4] = '\0';
-                        double input = int.Parse(new string(inData)) * 0.5 / 4096.0;
+                        inputPrevious = input;
+                        input = int.Parse(new string(inData)) * 1.0 / 4096.0;
 
                         if (valueCounter == 0)
                         {
@@ -172,15 +199,31 @@ namespace ChartTesting
                             if (input < MinVoltage)
                                 MinVoltage = input;
                         }
-                        //points.Add(new Point(Convert.ToDouble(valueCounter), input));
 
-                        inputPoints[valueCounter] = new Complex(input,0);
-                        
-                        if (averagingComboBox.SelectedIndex == 0)
-                            points.Add(new Point(Convert.ToDouble(valueCounter) * timeBetweenSamples, input));
-                        else
-                            points.Add(new Point(Convert.ToDouble(valueCounter) * timeBetweenSamples * (int)averagingComboBox.SelectedItem, input)); //* 1.2987E-6 * 1.111111E-6 --- 0*/
+                        if (firstPeakNotFound && valueCounter != 0)
+                            if (inputPrevious < input)
+                                ascending = true;
+                            else
+                            {
+                                if (ascending)
+                                {
+                                    firstPeakPosition = valueCounter;
+                                    firstPeakNotFound = false;
+                                }
+                                ascending = false;
+                            }
 
+                        if (!firstPeakNotFound && valueCounter < n_samples_original + firstPeakPosition)
+                        {
+                            inputPoints.Add(new Complex(input, 0));
+
+                            if (averagingComboBox.SelectedIndex == 0)
+                                points.Add(new Point(Convert.ToDouble(pointsCounter) * timeBetweenSamples, input));
+                            else
+                                points.Add(new Point(Convert.ToDouble(pointsCounter) * timeBetweenSamples * (int)averagingComboBox.SelectedItem, input));
+
+                            pointsCounter++;
+                        }
                         valueCounter++;
 
                         mean = mean + input / n_samples;
@@ -211,13 +254,13 @@ namespace ChartTesting
 
             double autocorr;
 
-            for (i = 0; i < n_samples - n_samples * 0.1; i++)
+            for (i = 0; i < pointsCounter*0.9; i++)
             {
-                autocorr = compute_autoc(n_samples, i, variance, mean);
+                autocorr = compute_autoc(pointsCounter, i, variance, mean);
                 autocorrelation.Add(autocorr);
             }
 
-            bool ascending = false;
+            ascending = false;
 
             for(i=0;i<autocorrelation.Count-1;i++)
                 if(autocorrelation[i] < autocorrelation[i+1])
@@ -238,9 +281,22 @@ namespace ChartTesting
 
             displayPeriodFrequency(meanPeriod, (int)averagingComboBox.SelectedItem);
 
-            Complex[] frequencySpectrum = new Complex[] { };
+            List<Complex> frequencySpectrum;
+            List<double> frequencySpectrumAbs;
 
             frequencySpectrum = DFT.Transform(inputPoints);
+            frequencySpectrumAbs = DFT.AbsoluteValue(frequencySpectrum);
+
+            for(i=1;i<frequencySpectrumAbs.Count;i++)
+            {
+                if (averagingComboBox.SelectedIndex == 0)
+                    pointsFrequency.Add(new Point((1/timeBetweenSamples)*Convert.ToDouble(i) * timeBetweenSamples, frequencySpectrumAbs[i]));
+                else
+                    pointsFrequency.Add(new Point((1 / timeBetweenSamples) * Convert.ToDouble(i) * timeBetweenSamples * (int)averagingComboBox.SelectedItem, frequencySpectrumAbs[i]));
+            }
+
+            m_d3DataSourceFrequency.RaiseDataChanged();
+            frequencyDomainChart.FitToView();
         }
 
         private void displayPeriodFrequency(double meanPeriod, int averaging)
@@ -292,19 +348,33 @@ namespace ChartTesting
 
 public class DFT
 {
-    public static Complex[] Transform(Complex[] input)
+    public static List<Complex> Transform(List<Complex> input)
     {
-        int N = input.Length;
+        int N = input.Count;
 
-        Complex[] output = new Complex[N];
+        List<Complex> output = new List<Complex>();
+        Complex number = new Complex();
 
         double arg = -2.0 * Math.PI / (double)N;
         for (int n = 0; n < N; n++)
         {
-            output[n] = new Complex();
+            number = 0;
             for (int k = 0; k < N; k++)
-                output[n] += input[k] * Complex.FromPolarCoordinates(1, arg * (double)n * (double)k);
+                number += input[k] * Complex.FromPolarCoordinates(1, arg * (double)n * (double)k);
+
+            output.Add(number);
         }
+        return output;
+    }
+
+    public static List<double> AbsoluteValue(List<Complex> input)
+    {
+        List<double> output = new List<double>(); 
+        foreach(Complex complexNumber in input)
+        {
+            output.Add(Math.Sqrt(Math.Pow(complexNumber.Real,2) + Math.Pow(complexNumber.Imaginary,2)));
+        }
+
         return output;
     }
 }
